@@ -1,0 +1,54 @@
+#!/bin/bash
+
+if [ -n "$ENSEMBLE" ]; then
+  publish_ip=$(ifconfig eth0 | grep "inet addr" | cut -d ':' -f 2 | awk '{print $1}')
+  IFS=', ' read -r -a hosts <<< "$ENSEMBLE"
+  for host in "${!hosts[@]}"
+  do
+    echo "HOST:${hosts[host]}"
+    if [ ${hosts[host]} == "0.0.0.0" ]; then
+      echo "On local container - IP is $publish_ip"
+      echo "server.$(($host+1)):$publish_ip:2888:3888" >> $ZK_HOME/conf/zoo.cfg
+    else
+      echo "server.$(($host+1)):${hosts[host]}:2888:3888" >> $ZK_HOME/conf/zoo.cfg
+    fi
+  done
+fi
+
+if [ -z "$DATADIR" ]; then
+  # if DATADIR is not set then use the dataDir value from the config
+  DATADIR=$(grep 'dataDir' $ZK_HOME/conf/zoo.cfg | head -1 | cut -d '=' -f 2)
+elif [ -n "$DATADIR"]; then
+  # if there's a datadir environment variable then the default one in zoo.cfg
+  sed -i 's/dataDir=.*/dataDir='"$DATADIR"'/' $ZK_HOME/conf/zoo.cfg
+else
+ echo "The DATADIR value could not be processed" 1>&2
+ exit 7654
+fi
+
+if [ -z "$MYID" ]; then
+  # If MYID is not set use 1
+  echo $DATADIR
+  echo 1 > $DATADIR/myid
+elif [ -n "$MYID" ]; then
+  # If MYID is set write the value on the myid file
+  echo $DATADIR
+  echo $MYID > $DATADIR/myid
+else
+  echo "The MYID value could not be processed" 1>&2
+  exit 7655
+fi
+
+if [ -e $ZOO_LOG_DIR]; then
+  export ZOO_LOG_DIR=/log/zookeeper
+fi
+if [ -e $ZOO_LOG4J_PROP]; then
+  export ZOO_LOG4J_PROP=INFO,ROLLINGFILE
+fi
+
+OPTS="$OPTS $ZK_HOME/conf/zoo.cfg"
+echo OPTS=$OPTS
+
+#sh -c "while true; do echo hello world; sleep 1; done"
+/opt/zookeeper/bin/zkServer.sh start-foreground $OPTS > /tmp/startup.log 2>&1
+
